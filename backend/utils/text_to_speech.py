@@ -1,9 +1,9 @@
+import uuid
 from gtts import gTTS
-import os, uuid
 
 
 def text_to_speech(text: str) -> str:
-    tts = gTTS(text)
-    filename = f"temp/{uuid.uuid4()}.mp3"
+    filename = f"temp/{uuid.uuid4()}.webm"
+    tts = gTTS(text=text, lang="ua") # або "en" якщо відповіді англійською
     tts.save(filename)
     return filename

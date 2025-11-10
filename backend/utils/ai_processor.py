@@ -1,12 +1,13 @@
 import os
-import openai
+from openai import OpenAI
 
 
 def process_query(text: str) -> str:
-    openai.api_key = os.getenv("OPENAI_API_KEY")
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    completion = openai.Chat.completions.create(
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role": "user", "content": text}])
+        messages=[{"role": "user", "content": text}]
+    )
     
-    return completion.choices[0].message.content
+    return response.choices[0].message.content
