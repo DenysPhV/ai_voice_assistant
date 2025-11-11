@@ -57,7 +57,7 @@ def llm_generate(prompt: str) -> str:
         return "Помилка: Модель TinyLlama не завантажена."
 
     # TinyLlama використовує [INST]
-    result = chat(prompt, max_new_tokens=150, do_sample=True, temperature=0.7)[0]['generated_text']
+    result = chat(prompt, max_new_tokens=120, do_sample=True, temperature=0.8)[0]['generated_text']
     
     if '[/INST]' in result:
         result = result.split('[/INST]')[-1]
@@ -71,6 +71,15 @@ def llm_generate(prompt: str) -> str:
         return "Вибач, не зміг зрозуміти запит 😅"
         
     return result
+
+def generate_response_from_data(user_query: str, data: str) -> str:
+    """
+    Формує промпт для AI на основі даних і генерує відповідь.
+    """
+    prompt = f"[INST] Роль: Ти — асистент університету. Задача: Надавати відповідь на запит студента, використовуючи надані дані. Запит: '{user_query}', Дані з бази: '{data}' [/INST]"
+    response = llm_generate(prompt)
+    return response
+
 
 async def process_query(text: str) -> str:
     """
@@ -89,20 +98,18 @@ async def process_query(text: str) -> str:
     schedule_intent = re.search(r'розк(лад|ат|ад|од)', text_lower)
     
     if schedule_intent:
-        group_match = re.search(r'([0-9]{2,3}\s?[A-ZМ])', text, re.IGNORECASE) 
+        group_match = re.search(r'([0-9]{2,3}\s?[A-ZМ])', text_lower, re.IGNORECASE) 
         if group_match:
             group_name = re.sub(r'\s', '', group_match.group(1))
             date = "сьогодні"
-            
             # Викликаємо інструмент
             data_from_db = await get_schedule(group_name, date)
             
-            # ‼️ ПОВЕРТАЄМОСЬ ДО [INST] ПРОМПТУ ‼️
-            prompt = f"[INST] Ти — асистент університету з річним дочвідом. Надай відповідь на запит студента, використовуючи надані дані. Запит: '{text}', Дані з бази: '{data_from_db}' [/INST]"
-            response = llm_generate(prompt)
-            return response
+            # prompt = f"[INST] Роль: Ти — асистент університету з річним дочвідом. Задача: Надавати відповідь на запит студента, використовуючи надані дані. Запит: '{text_lower}', Дані з бази: '{data_from_db}' [/INST]"
+            # response = llm_generate(prompt)
+            return generate_response_from_data(text_lower, data_from_db)# response
         else:
-            return "Я почув, що ви шукаєте розклад, але не зміг розпізнати номер групи. Спробуйте сказати чіткіше, наприклад: 'Розклад для 241М'."
+            return "Я почув, що ви шукаєте розклад, але не зміг розпізнати номер групи. Спробуйте сказати чіткіше, наприклад: Розклад для 241М."
 
     if "години прийому" in text_lower or "приймає" in text_lower:
         professor_match = re.search(r'(прийому|приймає)\s+([А-Яа-яІіЇї\']+)', text_lower)
@@ -110,13 +117,13 @@ async def process_query(text: str) -> str:
             professor_name = professor_match.group(2)
             data_from_db = await get_office_hours(professor_name)
             
-            prompt = f"[INST] Ти — асистент університету. Надай відповідь на запит студента, використовуючи надані дані. Запит: '{text}', Дані з бази: '{data_from_db}' [/INST]"
-            response = llm_generate(prompt)
-            return response
+            # prompt = f"[INST] Роль: Ти — асистент університету з річним дочвідом. Задача: Надавати відповідь на запит студента, використовуючи надані дані. Запит: '{text_lower}', Дані з бази: '{data_from_db}' [/INST]"
+            # response = llm_generate(prompt)
+            return generate_response_from_data(text_lower, data_from_db) # response
         else:
             return "Я можу надати години прийому, але, будь ласка, вкажіSь прізвище викладача."
 
     # --- Звичайний чат ---
-    prompt = f"[INST] Ти — розмовний асистент. Відповідай коротко, українською мовою. Запит: {text} [/INST]"
-    response = llm_generate(prompt)
-    return response
+    # prompt = f"[INST] Роль: Ти — асистент університету з річним дочвідом. Задача: Надавати відповідь на запит студента, використовуючи надані дані. Запит: '{text_lower}', Дані з бази: '{data_from_db}' [/INST]"
+    # response = llm_generate(prompt)
+    return generate_response_from_data(text_lower, data_from_db) # response
