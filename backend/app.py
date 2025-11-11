@@ -2,23 +2,50 @@
 # -*- coding: utf-8 -*-
 import shutil, os
 import uuid
+import uvicorn
 
 from datetime import datetime
 from typing import List
 from pydantic import BaseModel
 from bson import ObjectId
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from utils.speech_to_text import speech_to_text
-from utils.ai_processor import process_query
+from utils.ai_processor import process_query, load_ai_model
 from utils.text_to_speech import text_to_speech
 from utils.db_connector import connect_to_mongo, close_mongo_connection, get_conversations_collection
 
+# ‼️ НОВИЙ 'lifespan' менеджер ‼️
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- Код, що виконується ПІД ЧАС СТАРТУ ---
+    print("Застосунок запускається...")
+    
+    # 1. Підключаємось до БД (ваш старий 'startup_db')
+    connect_to_mongo()
+    db = connect_to_mongo()
+    await db["conversations"].create_index("user_id")
+    await db["conversations"].create_index([("timestamp", -1)])
+    print("✅ Підключення до БД встановлено.")
+    
+    # 2. Завантажуємо AI-модель
+    print("⏳ Завантажуємо AI-модель... (це займе 6+ хвилин)")
+    load_ai_model() # Викликаємо нашу синхронну функцію завантаження
+    print("✅ AI-модель завантажена і готова до роботи.")
+    
+    yield
+    
+    # --- Код, що виконується ПІД ЧАС ЗУПИНКИ ---
+    print("Застосунок зупиняється...")
+    close_mongo_connection()
+    print("✅ Підключення до БД закрито.")
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
+
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173"
@@ -48,51 +75,48 @@ if not os.path.exists("temp"):
 
 app.mount("/temp", StaticFiles(directory="temp"), name="temp")
 
-async def test():
-    db = connect_to_mongo()
-    print(await db.list_collection_names())
-
-@app.get("/")
-async def root():
-    return {"message": "AI Voice Assistant backend is running 🚀"}
-    
 
 @app.post("/api/voice")
 async def handle_voice(file: UploadFile, conversations=Depends(get_conversations_collection)):
+    temp_path = None
     try:
-        safe_filename = f"{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+        extension = os.path.splitext(file.filename)[1] or ".webm"
+        safe_filename = f"{uuid.uuid4()}{extension}"
         temp_path = os.path.join("temp", safe_filename)
 
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
     
-        # Розпізнавання мовлення
+        # 1. Отримуємо текст від Whisper
         text = speech_to_text(temp_path)
-        # Обробка запиту GPT
-        response = process_query(text)
-        # Синтез голосової відповіді
+        # 2. Отримуємо відповідь від AI (тепер з 'await', бо process_query - async)
+        response = await process_query(text)
+        # 3. Генеруємо аудіо
         audio_path = text_to_speech(response)
-
+        # 4. Зберігаємо в БД
         doc = {
         "user_id": "anonymous",      
         "session_id": str(uuid.uuid4()),
-        "timestamp": datetime.datetime(),
+        "timestamp": datetime.now(),
         "input_text": text,
         "response_text": response,
-        "audio_path": f"/{audio_path}", 
-        "meta": {"model": "mt5-base", "source": "local_whisper"}
+        "audio_path": f"/{audio_path}"
         }
-        
-        res = await conversations.insert_one(doc)
+        await conversations.insert_one(doc)
     
-        return {"text": response, "audio": f"/{audio_path}"}
+        return {
+            "inputText": text, 
+            "responseText": response, 
+            "audio": f"/{audio_path}"
+        }
     
     except Exception as e:
-        return {"error": str(e)}
+        # Повертаємо помилку, щоб фронтенд міг її обробити
+        return {"error": str(e), "inputText": text if 'text' in locals() else "Помилка до STT"}
     
     finally:
         # Очищення тимчасового файлу, який завантажив користувач
-        if os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
 
@@ -113,19 +137,5 @@ async def get_history(limit: int = 20, conversations=Depends(get_conversations_c
         })
     return results
 
-@app.on_event("startup")
-async def startup_db():
-    connect_to_mongo()
-    # опціонально: створити індексив
-    db = connect_to_mongo()
-    await db["conversations"].create_index("user_id")
-    await db["conversations"].create_index([("timestamp", -1)])
-
-@app.on_event("shutdown")
-async def shutdown_db():
-    close_mongo_connection()
-
-
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,3 +1,4 @@
+// VoiceRecorder.jsx
 import { useState, useRef } from "react";
 import axios from "axios";
 
@@ -28,19 +29,21 @@ export default function VoiceRecorder({ onResponse }) {
             headers: { "Content-Type": "multipart/form-data" },
           });
 
-           // 🔍 Безпечне розпакування відповіді
-          const text = res?.data?.text ?? "Немає тексту у відповіді 😕";
+           // Безпечне розпакування відповіді
+          const responseText = res?.data?.responseText ?? "Немає тексту у відповіді 😕";
+          const inputText = res?.data?.inputText ?? "🎙️ (текст не отримано)";
           const audio = res?.data?.audio ?? null;
 
-          if (!audio) {
+          if (!audio || res.data.error) {
             console.warn("⚠️ Бекенд не повернув поле 'audio'. Відповідь:", res.data);
-            onResponse("🎙️ Ваш запит", text, null);
+            onResponse(inputText, responseText || res.data.error, null);
+            return;
           }
 
           const cleanAudioUrl = `http://localhost:8000${audio.startsWith("/") ? audio : "/" + audio}`;
-          onResponse("🎙️ Ваш запит", text, cleanAudioUrl);
+          onResponse(inputText, responseText, cleanAudioUrl);
           
-          // Програємо аудіовідповідь
+          // Воспроїзведемо аудіовідповідь
           const audioObj = new Audio(cleanAudioUrl);
           audioObj.play();
 
