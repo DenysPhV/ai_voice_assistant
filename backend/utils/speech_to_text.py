@@ -1,13 +1,12 @@
 # backend/utils/speech_to_text.py
 import torch
-# import numpy
+import whisper
 
 torch._C.has_lapack = True
 
-import whisper
-
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = whisper.load_model("base", device=device)
 
 def speech_to_text(audio_path: str) -> str:
-    model = whisper.load_model("base", device="cuda")
     result = model.transcribe(audio_path,  language="uk", temperature=0)
     return result["text"]

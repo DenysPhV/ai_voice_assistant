@@ -60,7 +60,8 @@ async def root():
 @app.post("/api/voice")
 async def handle_voice(file: UploadFile, conversations=Depends(get_conversations_collection)):
     try:
-        temp_path = f"temp/{file.filename}"
+        safe_filename = f"{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+        temp_path = os.path.join("temp", safe_filename)
 
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -73,12 +74,12 @@ async def handle_voice(file: UploadFile, conversations=Depends(get_conversations
         audio_path = text_to_speech(response)
 
         doc = {
-        "user_id": "anonymous",           # або ідентифікатор користувача
+        "user_id": "anonymous",      
         "session_id": str(uuid.uuid4()),
         "timestamp": datetime.datetime(),
         "input_text": text,
         "response_text": response,
-        "audio_path": f"/{audio_path}",  # або повний URL
+        "audio_path": f"/{audio_path}", 
         "meta": {"model": "mt5-base", "source": "local_whisper"}
         }
         
@@ -88,6 +89,11 @@ async def handle_voice(file: UploadFile, conversations=Depends(get_conversations
     
     except Exception as e:
         return {"error": str(e)}
+    
+    finally:
+        # Очищення тимчасового файлу, який завантажив користувач
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @app.get("/api/history", response_model=List[ConversationOut])
@@ -110,7 +116,7 @@ async def get_history(limit: int = 20, conversations=Depends(get_conversations_c
 @app.on_event("startup")
 async def startup_db():
     connect_to_mongo()
-    # опціонально: створити індекси
+    # опціонально: створити індексив
     db = connect_to_mongo()
     await db["conversations"].create_index("user_id")
     await db["conversations"].create_index([("timestamp", -1)])
@@ -118,11 +124,6 @@ async def startup_db():
 @app.on_event("shutdown")
 async def shutdown_db():
     close_mongo_connection()
-
-# dependency для отримання колекції
-def get_conversations_collection():
-    db = connect_to_mongo()
-    return db["conversations"]
 
 
 if __name__ == "__main__":
