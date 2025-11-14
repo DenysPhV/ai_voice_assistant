@@ -1,0 +1,16 @@
+app = "ai_voice_assistant" # Change the app name to the desired name
+ 
+ kill_signal = "SIGINT"
+ kill_timeout = 5
+ 
+ [build]
+ dockerfile = "Dockerfile.flyio"
+ 
+ [build.args]
+ PARAMS = "-v" # Change the parameters according to your needs
+ 
+ [env]
+ PARAMS = "-v" # Match the content of this PARAMS variable to the one in `build.args` block
+ 
+ [experimental]
+ auto_rollback = true
